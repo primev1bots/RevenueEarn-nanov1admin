@@ -6,14 +6,14 @@ import { CheckCircle, XCircle, Filter, ArrowLeft, AlertCircle, User, Calendar, D
 
 // Your Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDA3zFoK2ZXwqZmUBuZYtvfuAfSnCGhTrY",
-  authDomain: "nanov1.firebaseapp.com",
-  databaseURL: "https://nanov1-default-rtdb.firebaseio.com",
-  projectId: "nanov1",
-  storageBucket: "nanov1.firebasestorage.app",
-  messagingSenderId: "254408761797",
-  appId: "1:254408761797:web:059628719c4b3041f2ebac",
-  measurementId: "G-J6GHL1J8ZY"
+  apiKey: "AIzaSyCAKMRzJCEsggLYQH8JjltkUAnVNbL43pg",
+  authDomain: "revenueearn-3a001.firebaseapp.com",
+  databaseURL: "https://revenueearn-3a001-default-rtdb.firebaseio.com",
+  projectId: "revenueearn-3a001",
+  storageBucket: "revenueearn-3a001.firebasestorage.app",
+  messagingSenderId: "95210268419",
+  appId: "1:95210268419:web:1050be3f3884f52fb82b36",
+  measurementId: "G-H35J7NTZ32"
 };
 
 // Initialize Firebase
