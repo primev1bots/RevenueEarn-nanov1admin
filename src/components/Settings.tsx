@@ -248,13 +248,13 @@ const AdminPanel: React.FC = () => {
               <label className="block text-sm font-medium mb-2">Max Amount ({appConfig.miningMaxAmount}):</label>
               <input
                 type="number"
-                min="0.1"
+                min="0.01"
                 max="100"
-                step="0.1"
+                step="0.01"
                 value={appConfig.miningMaxAmount}
                 onChange={(e) => handleInputChange("miningMaxAmount", parseFloat(e.target.value) || 1.0)}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="1.0"
+                placeholder="0.01"
               />
               <p className="text-xs text-gray-400 mt-1">Maximum mining amount</p>
             </div>
