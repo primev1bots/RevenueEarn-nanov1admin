@@ -20,7 +20,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-// Types (reuse your existing types)
+// Types
 type TransactionType = 'claim' | 'ad_reward' | 'task_reward' | 'withdrawal' | 'referral'
 type TransactionStatus = 'completed' | 'pending' | 'failed' | 'rejected'
 
@@ -88,6 +88,7 @@ interface WithdrawalManagementProps {
 const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfig }) => {
   const [withdrawalRequests, setWithdrawalRequests] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed' | 'rejected'>('pending');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [stats, setStats] = useState({
@@ -121,25 +122,59 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
 
   // Fetch withdrawal requests from Firebase
   useEffect(() => {
+    console.log('ðŸ” Starting to fetch withdrawal requests from Firebase...');
     const transactionsRef = ref(database, 'transactions');
     
     const handleValueChange = async (snapshot: any) => {
+      console.log('ðŸ“Š snapshot received:', snapshot.exists());
+      
       if (snapshot.exists()) {
         const allTransactions: Transaction[] = [];
+        const transactionData = snapshot.val();
+        
+        console.log('ðŸ“¦ Raw transactions data structure:', Object.keys(transactionData));
         
         // Iterate through all user transactions
-        snapshot.forEach((userSnapshot: any) => {
-          const userId = userSnapshot.key;
-          userSnapshot.forEach((transactionSnapshot: any) => {
-            const transaction = transactionSnapshot.val();
-            transaction.id = transactionSnapshot.key;
-            transaction.userId = parseInt(userId); // Convert to number to match your UserData type
+        Object.keys(transactionData).forEach(userId => {
+          const userTransactions = transactionData[userId];
+          console.log(`ðŸ‘¤ User ${userId} has ${Object.keys(userTransactions).length} transactions`);
+          
+          Object.keys(userTransactions).forEach(transactionId => {
+            const transaction = userTransactions[transactionId];
             
+            // Make sure we have all required fields and it's a withdrawal
             if (transaction.type === 'withdrawal') {
-              allTransactions.push(transaction);
+              const withdrawalTransaction: Transaction = {
+                id: transactionId,
+                userId: parseInt(userId),
+                type: transaction.type,
+                amount: transaction.amount || 0,
+                description: transaction.description || 'Withdrawal request',
+                timestamp: transaction.timestamp || Date.now(),
+                status: transaction.status || 'pending',
+                method: transaction.method,
+                accountNumber: transaction.accountNumber,
+                processedAt: transaction.processedAt,
+                rejectionReason: transaction.rejectionReason
+              };
+              
+              console.log(`ðŸ’³ Found withdrawal: ${withdrawalTransaction.id} for user ${withdrawalTransaction.userId}, amount: ${withdrawalTransaction.amount}, status: ${withdrawalTransaction.status}`);
+              allTransactions.push(withdrawalTransaction);
             }
           });
         });
+
+        console.log(`ðŸŽ¯ Total withdrawal transactions found: ${allTransactions.length}`, allTransactions);
+
+        if (allTransactions.length === 0) {
+          console.log('âŒ No withdrawal transactions found. Checking transaction structure...');
+          // Log sample transaction structure for debugging
+          Object.keys(transactionData).slice(0, 2).forEach(userId => {
+            const userTransactions = transactionData[userId];
+            const firstTransaction = userTransactions[Object.keys(userTransactions)[0]];
+            console.log(`ðŸ“ Sample transaction structure for user ${userId}:`, firstTransaction);
+          });
+        }
 
         // Sort by timestamp (newest first)
         const sortedTransactions = allTransactions.sort(
@@ -147,41 +182,62 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         );
 
         // Fetch user data for each transaction
-        const transactionsWithUserData = await Promise.all(
-          sortedTransactions.map(async (transaction) => {
-            try {
-              const userRef = ref(database, `users/${transaction.userId}`);
-              const userSnapshot = await get(userRef);
-              
-              if (userSnapshot.exists()) {
-                const userData = userSnapshot.val() as UserData;
-                return {
-                  ...transaction,
-                  user: {
-                    firstName: userData.firstName || '',
-                    lastName: userData.lastName || '',
-                    username: userData.username || ''
-                  }
-                };
+        try {
+          const transactionsWithUserData = await Promise.all(
+            sortedTransactions.map(async (transaction) => {
+              try {
+                console.log(`ðŸ” Fetching user data for user ${transaction.userId}`);
+                const userRef = ref(database, `users/${transaction.userId}`);
+                const userSnapshot = await get(userRef);
+                
+                if (userSnapshot.exists()) {
+                  const userData = userSnapshot.val() as UserData;
+                  
+                  return {
+                    ...transaction,
+                    user: {
+                      firstName: userData.firstName || 'Unknown',
+                      lastName: userData.lastName || '',
+                      username: userData.username || ''
+                    }
+                  };
+                } else {
+                  console.log(`âŒ No user data found for ${transaction.userId}`);
+                  return transaction;
+                }
+              } catch (userError) {
+                console.error(`ðŸ’¥ Error fetching user data for ${transaction.userId}:`, userError);
+                return transaction;
               }
-              return transaction;
-            } catch (error) {
-              console.error('Error fetching user data:', error);
-              return transaction;
-            }
-          })
-        );
+            })
+          );
 
-        setWithdrawalRequests(transactionsWithUserData);
-        calculateStats(transactionsWithUserData);
+          console.log('âœ… Final transactions with user data:', transactionsWithUserData);
+          setWithdrawalRequests(transactionsWithUserData);
+          calculateStats(transactionsWithUserData);
+          setError(null);
+        } catch (fetchError) {
+          console.error('ðŸ’¥ Error fetching user data:', fetchError);
+          setError('Error loading user details');
+          setWithdrawalRequests(sortedTransactions);
+          calculateStats(sortedTransactions);
+        }
       } else {
+        console.log('âŒ No transactions found in Firebase at /transactions path');
         setWithdrawalRequests([]);
         calculateStats([]);
+        setError('No withdrawal requests found in database');
       }
       setLoading(false);
     };
 
-    onValue(transactionsRef, handleValueChange);
+    const handleError = (error: any) => {
+      console.error('ðŸ’¥ error:', error);
+      setError(`Failed to load withdrawal requests: ${error.message}`);
+      setLoading(false);
+    };
+
+    onValue(transactionsRef, handleValueChange, handleError);
 
     return () => {
       off(transactionsRef, 'value', handleValueChange);
@@ -202,6 +258,8 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
       totalRejected: rejected,
       totalAmount: totalAmount
     });
+
+    console.log(`ðŸ“Š Stats updated - Pending: ${pending}, Completed: ${completed}, Rejected: ${rejected}, Total Amount: ${totalAmount}`);
   };
 
   const handleApprove = async (transaction: Transaction) => {
@@ -217,6 +275,8 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         status: 'completed' as const,
         processedAt: Date.now()
       };
+
+      console.log(`âœ… Approving withdrawal ${transaction.id} for user ${transaction.userId}`);
 
       // Update transaction status in Firebase
       const transactionRef = ref(database, `transactions/${transaction.userId}/${transaction.id}`);
@@ -234,6 +294,7 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         await update(userRef, {
           totalWithdrawn: newTotalWithdrawn
         });
+        console.log(`ðŸ’° Updated total withdrawn for user ${transaction.userId} to ${newTotalWithdrawn}`);
       }
 
       // Update local state
@@ -249,9 +310,6 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
       if (isMobile) {
         setSelectedTransaction(null);
       }
-
-      // You can implement Telegram bot notification here
-      await sendNotification(transaction.userId, 'approved', withdrawalAmount);
 
       alert('Withdrawal approved successfully!');
       
@@ -278,6 +336,8 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         rejectionReason: 'Administrative decision'
       };
 
+      console.log(`âŒ Rejecting withdrawal ${transaction.id} for user ${transaction.userId}`);
+
       // Update transaction status in Firebase
       const transactionRef = ref(database, `transactions/${transaction.userId}/${transaction.id}`);
       await update(transactionRef, updates);
@@ -294,6 +354,7 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         await update(userRef, {
           balance: newBalance
         });
+        console.log(`ðŸ’° Refunded ${withdrawalAmount} to user ${transaction.userId}, new balance: ${newBalance}`);
       }
 
       // Update local state
@@ -310,9 +371,6 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         setSelectedTransaction(null);
       }
 
-      // Send notification to user
-      await sendNotification(transaction.userId, 'rejected', withdrawalAmount);
-
       alert('Withdrawal rejected and amount refunded to user!');
       
     } catch (error) {
@@ -321,12 +379,6 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
     } finally {
       setProcessingId(null);
     }
-  };
-
-  const sendNotification = async (userId: number, action: 'approved' | 'rejected', amount: number) => {
-    console.log(`Notification: Withdrawal ${action} for user ${userId}, amount: ${amount}`);
-    // Implement your Telegram bot notification logic here
-    // You can use your Telegram bot to send notifications to users
   };
 
   // Filter and pagination logic
@@ -625,6 +677,28 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
         <div className="flex flex-col items-center space-y-4">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
           <div className="text-white text-lg font-medium">Loading withdrawal requests...</div>
+          <div className="text-gray-400 text-sm">Checking database...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center space-y-4 max-w-md text-center">
+          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/50">
+            <AlertCircle className="w-8 h-8 text-red-400" />
+          </div>
+          <div className="text-white text-lg font-medium">Error Loading Data</div>
+          <div className="text-gray-400 text-sm">{error}</div>
+          <div className="text-gray-500 text-xs mt-4">
+            Please check:
+            <ul className="mt-2 space-y-1 text-left">
+              
+              <li>â€¢ Database rules</li>
+            </ul>
+          </div>
         </div>
       </div>
     );
@@ -649,6 +723,18 @@ const WithdrawalManagement: React.FC<WithdrawalManagementProps> = ({ walletConfi
                 Manage and process user withdrawal requests
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Debug Info - Remove in production */}
+      <div className="px-4 sm:px-6 py-2">
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+          <div className="text-blue-300 text-sm flex flex-wrap gap-4">
+            <span><strong>Total Requests:</strong> {withdrawalRequests.length}</span>
+            <span><strong>Filtered:</strong> {filteredRequests.length}</span>
+            <span><strong>Status:</strong> {statusFilter}</span>
+            <span><strong>db:</strong> Connected</span>
           </div>
         </div>
       </div>
